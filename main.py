@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 import os
 import shutil
-
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import torch
 import torch.nn as nn
@@ -70,6 +70,8 @@ def get_args_parser():
                         help='path where to save, empty for no saving')# 什么都不设置，将会生成outpus\HIGH\
     parser.add_argument('--vis_dir', default='./vis_res',
                         help='path where to save visualization result')
+    parser.add_argument('--save_freq', default=5,
+                        help='save freq of checkpoint')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
@@ -166,11 +168,12 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
             best_mae = checkpoint['best_mae']
-            print(best_epoch)
+            print(best_epoch) #打印出 checkpoint中保存的最佳模型在第几轮
             best_epoch = checkpoint['best_epoch']
 
     # training
     print("Start training")
+    writer = SummaryWriter(log_dir='runs/experiment_name')  # 你可以根据需要修改 log_dir
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -179,7 +182,7 @@ def main(args):
         t1 = time.time()
         train_stats = train_one_epoch(
             model, criterion, data_loader_train, optimizer, device, epoch,
-            args.clip_max_norm)
+            args.clip_max_norm,writer)
         t2 = time.time()
         print('[ep %d][lr %.7f][%.2fs]' % \
               (epoch, optimizer.param_groups[0]['lr'], t2 - t1))
@@ -203,6 +206,20 @@ def main(args):
                 'best_epoch':best_epoch, # 增加保存best_epoch
             }, checkpoint_path)
 
+        # # 定期保存模型（比如每隔 N 个 epoch 保存一次）
+        # if epoch % args.save_freq == 0 and utils.is_main_process():
+        #     print("保存了第数据")
+        #     regular_path = output_dir / f'regular_checkpoint_{epoch}.pth'
+        #     utils.save_on_master({
+        #         'model': model_without_ddp.state_dict(),
+        #         'optimizer': optimizer.state_dict(),
+        #         'lr_scheduler': lr_scheduler.state_dict(),
+        #         'epoch': epoch,
+        #         'args': args,
+        #         'best_mae': best_mae,
+        #         'best_epoch': best_epoch,  # 增加保存best_epoch
+        #     }, regular_path)
+
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch,
                      'n_parameters': n_parameters}
@@ -215,7 +232,7 @@ def main(args):
         # evaluation
         if epoch % args.eval_freq == 0 and epoch > 0:
             t1 = time.time()
-            test_stats = evaluate(model, data_loader_val, device, epoch, vis_dir=args.vis_dir)
+            test_stats = evaluate(model, data_loader_val, device, epoch, None)
             t2 = time.time()
 
             # output results
@@ -236,7 +253,7 @@ def main(args):
                 src_path = output_dir / 'checkpoint.pth'
                 dst_path = output_dir / 'best_checkpoint.pth'
                 shutil.copyfile(src_path, dst_path)
-
+    writer.close()
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))

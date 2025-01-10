@@ -7,7 +7,7 @@ import sys
 from typing import Iterable
 import numpy as np
 import cv2
-
+from torch.utils.tensorboard import SummaryWriter
 import torch
 import torchvision.transforms as standard_transforms
 import torch.nn.functional as F
@@ -79,7 +79,7 @@ def visualization(samples, targets, pred, vis_dir, split_map=None):
 # training
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, max_norm: float = 0):
+                    device: torch.device, epoch: int, max_norm: float = 0,writer=None):
     model.train()
     criterion.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -87,7 +87,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
-    for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
+    for i,(samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         gt_points = [target['points'] for target in targets]
@@ -119,7 +119,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-    
+
+        # 记录每个 batch 的 loss 到 TensorBoard
+        if writer is not None:
+            writer.add_scalar('Loss/train', loss_value, epoch * len(data_loader) + i)
+
+    # 记录每个 epoch 的平均 loss 到 TensorBoard
+    if writer is not None:
+        avg_loss = metric_logger.meters['loss'].global_avg
+        writer.add_scalar('Loss/train_epoch', avg_loss, epoch)
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
