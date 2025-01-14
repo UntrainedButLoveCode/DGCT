@@ -120,6 +120,14 @@ def main(args):
             "lr": args.lr_backbone,
         },
     ]
+
+    # 打印 backbone 的所有参数名称
+    print("Backbone parameters:")
+    for name, param in model_without_ddp.named_parameters():
+        if "backbone" not in name and param.requires_grad:
+            print(f"Name: {name}, Shape: {param.shape}, Requires Grad: {param.requires_grad}")
+
+
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                   weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.epochs)
@@ -232,7 +240,7 @@ def main(args):
         # evaluation
         if epoch % args.eval_freq == 0 and epoch > 0:
             t1 = time.time()
-            test_stats = evaluate(model, data_loader_val, device, epoch, None)
+            test_stats = evaluate(model, data_loader_val, device, epoch, args.vis_dir)
             t2 = time.time()
 
             # output results

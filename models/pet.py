@@ -192,12 +192,12 @@ class PET(nn.Module):
 
         # context encoder
         self.encode_feats = '8x'
-        enc_win_list = [(32, 16), (32, 16), (16, 8), (16, 8)]  # encoder window size
-        args.enc_layers = len(enc_win_list)
-        self.context_encoder = build_encoder(args, enc_win_list=enc_win_list)
+        # enc_win_list = [(32, 16), (32, 16), (16, 8), (16, 8)]  # encoder window size
+        # args.enc_layers = len(enc_win_list)
+        # self.context_encoder = build_encoder(args, enc_win_list=enc_win_list)
 
         # quadtree splitter
-        context_patch = (128, 64)
+        context_patch = (64, 64)
         context_w, context_h = context_patch[0]//int(self.encode_feats[:-1]), context_patch[1]//int(self.encode_feats[:-1])
         self.quadtree_splitter = nn.Sequential(
             nn.AvgPool2d((context_h, context_w), stride=(context_h ,context_w)),
@@ -309,9 +309,10 @@ class PET(nn.Module):
         src, mask = features[self.encode_feats].decompose()
         src_pos_embed = pos[self.encode_feats]
         assert mask is not None
-        encode_src = self.context_encoder(src, src_pos_embed, mask)
+        # encode_src = self.context_encoder(src, src_pos_embed, mask)
+        encode_src = src
         context_info = (encode_src, src_pos_embed, mask)
-        
+
         # apply quadtree splitter
         bs, _, src_h, src_w = src.shape
         sp_h, sp_w = src_h, src_w
@@ -323,7 +324,7 @@ class PET(nn.Module):
         # quadtree layer0 forward (sparse)
         if 'train' in kwargs or (split_map_sparse > 0.5).sum() > 0:
             kwargs['div'] = split_map_sparse.reshape(bs, sp_h, sp_w)
-            kwargs['dec_win_size'] = [16, 8]
+            kwargs['dec_win_size'] = [8, 8]
             outputs_sparse = self.quadtree_sparse(samples, features, context_info, **kwargs)
         else:
             outputs_sparse = None
@@ -331,7 +332,7 @@ class PET(nn.Module):
         # quadtree layer1 forward (dense)
         if 'train' in kwargs or (split_map_dense > 0.5).sum() > 0:
             kwargs['div'] = split_map_dense.reshape(bs, ds_h, ds_w)
-            kwargs['dec_win_size'] = [8, 4]
+            kwargs['dec_win_size'] = [4, 4]
             outputs_dense = self.quadtree_dense(samples, features, context_info, **kwargs)
         else:
             outputs_dense = None

@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import torchvision
 from torch import nn
-
+from .CBAM import ChannelAttention,SpatialAttention
 from util.misc import NestedTensor
 from .vgg import *
 from ..position_encoding import build_position_encoding
@@ -25,9 +25,18 @@ class FeatsFusion(nn.Module):
         self.P3_1 = nn.Conv2d(C3_size, hidden_size, kernel_size=1, stride=1, padding=0)
         self.P3_2 = nn.Conv2d(hidden_size, out_size, kernel_size=out_kernel, stride=1, padding=out_kernel//2)
 
+        self.ca5 = ChannelAttention(512) # (bs, 512, 16, 16)
+        self.sa3 = SpatialAttention(256) # (bs, 256, 64, 64)
+        self.sa4 = SpatialAttention(512) # (bs, 512, 32, 32)
+
+
     def forward(self, inputs):
         C3, C4, C5 = inputs
         C3_shape, C4_shape, C5_shape = C3.shape[-2:], C4.shape[-2:], C5.shape[-2:]
+
+        C3 = self.sa3(C3)
+        C4 = self.sa4(C4)
+        C5 = self.ca5(C5)
 
         P5_x = self.P5_1(C5)
         P5_upsampled_x = F.interpolate(P5_x, C4_shape)
